@@ -1,7 +1,9 @@
 import os
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+from scipy.io import savemat
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -27,6 +29,18 @@ quiz_template = ChatPromptTemplate.from_template(
 quiz_gen = quiz_template | structured_llm
 
 
+@tool
+def save_quiz_to_mat(questions: list[dict], filename: str = "quiz.mat") -> str:
+    """Sauvegarde une liste de questions de quiz dans un fichier MATLAB (.mat).
+
+    Chaque question est un dict avec les clés : question, options,
+    correct_answer, difficulty. Renvoie un message de confirmation.
+    """
+    data = {"quiz": questions}
+    savemat(filename, data)
+    return f"{len(questions)} question(s) sauvegardée(s) dans {filename}"
+
+
 def print_quiz(q: QuizQuestion):
     print(f"\n  Q: {q.question}")
     for i, opt in enumerate(q.options, start=1):
@@ -37,12 +51,17 @@ def print_quiz(q: QuizQuestion):
 gen_questions = list()
 
 while True:
-    topic = input("\nInsert a topic : ")
-    quiz = quiz_gen.invoke(
-        {
-            'topic': topic,
-            'history': gen_questions
-        }
-    )
+    topic = input("\nInsert a topic (/bye pour quitter) : ")
+
+    if topic.lower() == "/bye":
+        if gen_questions:
+            # on appelle le tool avec .invoke() et un dict d'arguments
+            result = save_quiz_to_mat.invoke({"questions": gen_questions})
+            print(f"  -> {result}")
+        print("Bye !")
+        break
+
+    quiz = quiz_gen.invoke({'topic': topic, 'history': gen_questions})
     print_quiz(quiz)
-    gen_questions.append(quiz)
+    # on convertit le modèle Pydantic en dict pour le tool
+    gen_questions.append(quiz.model_dump())
